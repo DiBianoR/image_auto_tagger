@@ -8,6 +8,8 @@ from pathlib import Path
 from PIL import Image
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
+load_dotenv()
 
 # Define the expected JSON structure for Gemini
 RESPONSE_SCHEMA = {
@@ -40,33 +42,46 @@ def get_year_from_metadata(filepath):
         pass
     return None
 
+
 def inject_metadata_safely(filepath, tags):
     """Uses ExifTool to inject metadata without altering the image bitstream."""
     tags_str = ", ".join(tags)
-    
+
+    # 1. Print the raw tags so we can see what the LLM actually generated
+    print(f"  [*] Raw tags: {tags_str}")
+
     command = [
         "exiftool",
-        "-overwrite_original",    
-        f"-sep", ", ",            
-        f"-XMP:Subject+={tags_str}", 
+        "-overwrite_original",
+        f"-sep", ", ",
+        f"-XMP:Subject+={tags_str}",
         f"-IPTC:Keywords+={tags_str}",
         str(filepath)
     ]
-    
+
     try:
-        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # 2. Changed DEVNULL to capture_output=True so we can read the error
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
         return True
     except FileNotFoundError:
         print("[!] ERROR: ExifTool is not installed or not in PATH.")
         return False
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
         print(f"[!] ERROR: Failed to write metadata to {filepath.name}")
+        # 3. Print the exact error ExifTool threw
+        print(f"    ExifTool Output: {e.stderr.strip()}")
         return False
 
-def sanitize_filename(name):
+
+def sanitize_filename(name, max_length: int = 100):
     """Removes characters that are illegal in Windows/Mac file paths."""
     safe_name = re.sub(r'[\\/*?:"<>|\x00-\x1f]', "", name)
+    safe_name = safe_name.strip(' .')#  removes both spaces and periods from the very beginning or end of the string
+    if len(safe_name) > max_length:
+        # Cut it down and append an ellipsis so you know it was truncated
+        safe_name = safe_name[:max_length].strip() + "..."
     return safe_name.strip()
+
 
 def process_image(client, filepath, args):
     print(f"\nProcessing: {filepath.name}")

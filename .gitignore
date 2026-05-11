@@ -181,3 +181,5 @@ cython_debug/
 .cursorindexingignore
 
 .idea
+exiftool.exe
+exiftool_files
